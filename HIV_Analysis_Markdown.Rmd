@@ -1,0 +1,1467 @@
+---
+title: "Demo Project - Global HIV Epidemic Analysis"
+author: "Xiao Yu"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+*This is a demonstration project for the purpose of sharing and displaying my data analysis skills with the R language. This HTML file is generated from knitting an Rmarkdown file I created for the demonstration. For better demonstration, the content of this document is not in the format of a data analysis report, instead it follows the natural flow of how I work and displays the treated object or result every step at a time. All processed data were obtained from publicly available sources and the work content was created solely for this demonstration. The demonstrated skills in this project include processing, cleaning, wranglling and merging of large datasets, as well as descriptive analysis with mainly visualization.*
+
+<br>
+<br>
+
+### General Information of the Project:
+
+Project name: Demo - Global HIV Epidemic Analysis
+
+Data source: WHO, UNICEF, UNAIDS
+
+Objective: To have a collective look and analysis of the global HIV epidemic for the past 30 years.
+
+Time used: approx. 50hr
+
+Presentation style: Work flow
+
+Remark: The final collective dataset would cover 20+ variables throughout a timespan of 30 years, of all countries worldwide. Any entry where data was unavailable would appear as NA. Due to the nature of NGO collected data from such a wide region and timespan, there are inevidibly many NAs and the final dataset would remain moderately fragmented as well. To avoid losing more data during process, I'm keeping all the NAs from the source data until NA removal is necessary.
+
+Viewing Guide:   
+Grey chunk - Code  
+White chunk - Code generated result  
+White background - Comments  
+*White background, italic - Observations & explainations*  
+
+<br>
+<br>
+<br>
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(echo = T, progress = F, warning = F, message = F, fig.path='Figures/',
+                      fig.height = 6, fig.width = 10)
+```
+
+### Step 0: Loading Libraries  
+
+*I use an umbrella library list for all my projects, hence the following list of libraries will cover all that is used in the work below. It is possible that some libraries are mentioned here but not used.*  
+```{r setup, echo = T, progress = F, results = "hide", warning = F, message = F}
+
+library(gtools)
+library(knitr)
+library(markdown)
+library(readr)
+library(readxl)
+library(rmarkdown)
+library(stringr)
+library(tidyr)
+library(tidyverse) 
+library(ggplot2)
+library(ggrepel)
+library(ggthemes)
+library(gganimate)
+library(gifski)
+library(grid)
+library(gridExtra)
+library(dslabs)
+library(gapminder)
+library(dplyr)
+library(htmlwidgets)
+library(purrr)
+library(lubridate)
+library(broom)
+library(caret)
+library(e1071)
+library(stats)
+library(pdftools)
+library(Matrix)
+library(graphics)
+library(matrixStats)
+library(doSNOW)
+library(iterators)
+library(snow)
+library(ipred)
+library(xgboost)
+library(MASS)
+library(rpart)
+library(rpart.plot)
+library(tree)
+library(cluster)
+library(maptree)
+library(formatR)
+library(cowplot)
+library(randomForest)
+library(Rborist)
+library(rafalib)
+library(fastAdaboost)
+library(gam)
+library(kernlab)
+library(naivebayes)
+library(RColorBrewer)
+library(data.table)
+library(writexl)
+library(countrycode)
+library(maps)
+library(raster)
+library(spData) 
+library(spDataLarge) 
+library(tmap)
+library(leaflet)
+library(terra)
+library(rvest)
+library(magrittr)
+library(ggmap)
+library(sf)
+library(remotes)
+library(stars)
+library(abind)
+library(units)
+library(s2)
+library(brms)
+library(patchwork)
+library(forcats)
+library(AER) 
+library(lmtest)
+library(writexl)
+library(plyr)
+library(tidytext)
+library(transformr)
+```
+
+<br>
+<br>
+<br>
+
+### Step 1: Going Through Source Data and Doing Some Basic Processing / Cleaning
+
+<br>
+
+#### 1.1 Dataset 1  
+Source: Unicef, https://data.unicef.org/  
+Content: HIV related indicators among youth and pregnant women, including numbers of new infections, numbers of AIDS-related deaths, numbers of People Living with HIV (PLHIV), numbers of people receiving Anti-Viral Treatment (ART), ratio of pregnant women who is HIV Positive (HIV+), ratio of HIV+ pregnant women receiving lifelong ART, ratio of mother-to-infant transmission, as well as some general indicators for the countries including population, life expectancy as well as spendings on education, health and social protection.  
+
+<br>
+
+*Due to the large sizes of the data frames processed in this project, displaying them wholly goes beyond the rendering power of Rmarkdown, hence the head (first 6 rows) of data frames will be displayed by default instead of whole data frames, unless otherwise needed.*  
+
+<br>
+
+Import & first glance:
+```{r, layout = "l-body-outset"}
+unicef_dat <- read_csv("./unicef/fusion_GLOBAL_DATAFLOW_UNICEF_1.0_.HVA_EPI_DTH_RT+HVA_EPI_INF_RT+HVA_EPI_DTH_RT_0-14+HVA_EPI_INF_RT_0-14+HVA_PED_ART_CVG+HVA_PMTCT_ART_CVG+HVA_PMTCT_MTCT+HVA_PMTCT_STAT_CVG+HVA_PMTCT_TEST_CVG+ECON_GVT_EDU_EXP_PTGDP+ECON_SOC_PRO_EXP_PTGDP+EC.csv")
+paged_table(head(unicef_dat))
+str(unicef_dat)
+```
+
+<br>
+
+Look into the ranges of some variables:   
+```{r}
+unique(unicef_dat$`INDICATOR:Indicator`)
+length(unique(unicef_dat$`INDICATOR:Indicator`))
+unique(unicef_dat$`SEX:Sex`)
+unique(unicef_dat$`UNIT_MULTIPLIER:Unit multiplier`)
+unique(unicef_dat$`UNIT_MEASURE:Unit of measure`)
+unique(unicef_dat$`AGE:Current age`)
+class(unicef_dat$`OBS_VALUE:Observation Value`)
+class(unicef_dat$`INDICATOR:Indicator`)
+```
+
+<br>
+
+*The original dataset is a long table on HIV epidemic figures from most countries, with 12 indicators, from 1990 to 2021/2022.*  
+
+<br>
+
+Take off some spare varibles, unify value units and split duo-valued cells:
+```{r}
+hiv_dat1 <- unicef_dat[, 2:8]
+names(hiv_dat1) <- c("Country", "Indicator", "Sex", "Year", "Value", "Unit", "Measure")
+hiv_dat1 <- hiv_dat1 %>%
+  mutate(Value = ifelse(Unit == "3: Thousands", as.numeric(Value) * 1000, as.numeric(Value))) %>%
+  filter(Sex == "_T: Total") %>%
+  dplyr::select(-c(Sex, Unit)) %>%
+  separate(Country, c("Country Code", "Country"), sep = ": ") %>%
+  separate(Indicator, c("Short_Indi", "Indicator"), sep = ": ") %>%
+  dplyr::select(-Short_Indi)
+```
+
+<br>
+
+Check details on units of measures before removing this varible:  
+```{r}
+indicators_hiv1 <- unique(hiv_dat1$Indicator)
+measures_hiv1 <- rep(NA, 12)
+for (i in 1:12) {
+  dat <- hiv_dat1 %>%
+    filter(Indicator == indicators_hiv1[i])
+  measures_hiv1[i] <- unique(dat$Measure)
+}
+indicator_measures_hiv1 <- data.frame(Indicator = indicators_hiv1, Measure = measures_hiv1)
+hiv_dat1 <- hiv_dat1 %>%
+  dplyr::select(-Measure)
+```
+
+<br>
+
+Get rid of non-country regions in the country list:  
+```{r}
+countries <- unique(hiv_dat1$Country)
+countries <- countries[-c(63, 64, 65, 74, 120, 122, 143, 161, 162, 163, 166, 205, 206, 211,
+                          229, 243, 244, 245)]
+hiv_dat1 <- hiv_dat1 %>%
+  filter(Country %in% countries)
+```
+
+<br>
+
+Temprarily widening up data for easier processing, and rename indicators including measure units:
+```{r}
+hiv_dat1 <- hiv_dat1 %>%
+  pivot_wider(names_from = "Indicator", values_from = "Value")
+names(hiv_dat1) <- c("Country Code", "Country", "Year", "Dependency Ratio", "Life expectancy",
+                     "Population", "Spending Education %GDP", "Spending Health %GDP",
+                     "Spending Social Protection %GDP", "Death 0-14 per mil",
+                     "New 0-14 per 1000", "PLHIV 0-14 on ART %", 
+                     "Pregnant PLHIV on ART Lifelong %",
+                     "Mother-Child Transmittion per 100", "Pregnent HIV+ %")
+```
+
+<br>
+
+Fix the class and format of varibles:
+```{r, results = F}
+sapply(hiv_dat1, class)
+hiv_dat1 <- hiv_dat1 %>%
+  mutate(Year = as.integer(Year), `Dependency Ratio` = round(`Dependency Ratio`, digits = 2),
+         `Life expectancy` = as.integer(`Life expectancy`), Population = as.integer(Population), 
+         `Spending Education %GDP` = round(`Spending Education %GDP`, digits = 2), 
+         `Spending Health %GDP` = round(`Spending Health %GDP`, digits = 2), 
+         `Spending Social Protection %GDP` = round(`Spending Social Protection %GDP`, 
+                                                   digits = 2), 
+         `Death 0-14 per mil` = round(`Death 0-14 per mil`, digits = 2), 
+         `New 0-14 per 1000` = round(`New 0-14 per 1000`, digits = 4), 
+         `PLHIV 0-14 on ART %` = round(`PLHIV 0-14 on ART %`, digits = 2), 
+         `Pregnant PLHIV on ART Lifelong %` = round(`Pregnant PLHIV on ART Lifelong %`, 
+                                                    digits = 2), 
+         `Mother-Child Transmittion per 100` = round(`Mother-Child Transmittion per 100`,
+                                                     digits = 2), 
+         `Pregnent HIV+ %` = round(`Pregnent HIV+ %`, digits = 2))
+
+sapply(hiv_dat1, class)
+```
+
+<br>
+
+Take a look of the data frame now:
+```{r, layout = "l-body-outset"}
+paged_table(head(hiv_dat1))
+str(hiv_dat1)
+```
+
+<br>
+<br>
+<br>
+
+#### 1.2 Dataset 2  
+Source: WHO, https://www.who.int/data/gho/data/themes/hiv-aids/   
+Content: Key HIV-related indicators without age specification, including numbers of People Living with HIV (PLHIV), the coverage rate of Anti-Viral Treatment (ART), numbers of new infections and numbers of HIV-related deaths.
+
+<br>
+
+Import & first glance:
+```{r, layout = "l-body-outset"}
+PLHIV_num <- read_csv("./who/PLHIV num.csv")
+paged_table(head(PLHIV_num))
+ART_coverage <- read_csv("./who/ART coverage %.csv")
+paged_table(head(ART_coverage))
+new_infection_per1000 <- read_csv("./who/New Infection per 1000.csv")
+paged_table(head(new_infection_per1000))
+death_num <- read_csv("./who/death num.csv")
+paged_table(head(death_num))
+```
+
+<br>
+
+*The above 4 data frames come from the same source and each contains 1 indicator I want, and they're quite consistant in data structures and variable names, hence it's nice and smooth to bulk process and combine the key values into 1 data frame.*  
+
+<br>
+
+Temperarely merge these data frames into a list to make bulk processing easier, then pick the columns I want from each data frame:  
+```{r}
+new_infection_per1000 <- new_infection_per1000 %>%
+  filter(Dim1 == "Both sexes")
+get_indi <- function(x) {
+  x[, c(7, 8, 10, 23, 24)]
+}
+
+list_df <- list(PLHIV_num, new_infection_per1000, death_num, ART_coverage)
+list_df <- lapply(list_df, get_indi)
+```
+
+<br>
+
+*When values are low (<1000 or less) on some indicators, the data collector used estimate values and presented them in the format of "<n" (e.g. <50, <100, etc.). To enable further calculations, I am transferring the estimated values of "<n" into numeric values of "n/2". Meanwhile to avoid misleading large ratios, I will not do devision on any 2 indicators when they both contain such estimate values during this project:*  
+```{r}
+adjust_by_prefix <- function(x) {
+  x <- x %>%
+    mutate(FactValueNumeric = ifelse(!is.na(FactValueNumericPrefix) & 
+                                       FactValueNumericPrefix == "<", 
+                                     FactValueNumeric/2, FactValueNumeric))
+}
+
+list_df <- lapply(list_df, adjust_by_prefix)
+
+remove_prefix <- function(x) {
+  x <- x[, -4]
+}
+
+list_df <- lapply(list_df, remove_prefix)
+```
+
+<br>
+
+Name all variables of each data frame accordingly, then reform the list into one big data frame:
+```{r}
+indicators <- c("PLHIV num", "New Infection Per 1000", "Death Num", "ART Coverage")
+
+for (i in 1:4) {
+  names(list_df[[i]]) <- c("Country Code", "Country", "Year", indicators[i])
+}
+
+hiv_dat2 <- list_df %>%
+  reduce(full_join, by = c("Country Code", "Country", "Year"))
+```
+
+<br>
+
+Convert death and PLHIV numbers to ratios in population (number per million people):
+```{r, results = F}
+pop <- hiv_dat1[, c(2, 3, 6)]
+pop$Population <- as.integer(pop$Population)
+hiv_dat2 <- full_join(hiv_dat2, pop, by = c("Country", "Year"))
+
+any(is.na(hiv_dat2$Population))
+
+hiv_dat2 <- hiv_dat2 %>%
+  filter(!is.na(Population)) %>%
+  mutate(Prevalence = round(`PLHIV num`/Population * 1e+06, digits = 2), 
+         Death = round(`Death Num`/Population * 1e+06, digits = 2)) %>%
+  dplyr::select(`Country Code`, Country, Year, Prevalence, Death, `ART Coverage`, 
+                `New Infection Per 1000`)
+```
+
+<br>
+
+Now take a look at Dataset 2:
+```{r, layout = "l-body-outset"}
+paged_table(head(hiv_dat2))
+str(hiv_dat2)
+```
+
+<br>
+<br>
+<br>
+
+
+
+#### 1.3 Dataset 3  
+Source: UNAIDS, https://aidsinfo.unaids.org/    
+Content: Age specific data on numbers of PLHIV, AIDS-related death and New HIV infections. Data were categorised into 3 age groups - under (including) 14, 15 - 49 and above (including) 50.  
+
+<br>
+
+Import & first glance:
+```{r, layout = "l-body-outset"}
+PLHIV_50_num <- read_csv("./aidsinfo_unaids/People living with HIV_People living with HIV - People aged 50 and over_Population_ All people aged 50 and over.csv")
+paged_table(head(PLHIV_50_num))
+PLHIV_15_49_num <- read_csv("./aidsinfo_unaids/People living with HIV_People living with HIV - Adults (15-49)_Population_ All adults (15-49).csv")
+paged_table(head(PLHIV_15_49_num))
+PLHIV_14_num <- read_csv("./aidsinfo_unaids/People living with HIV_People living with HIV - Children (0-14).csv")
+paged_table(head(PLHIV_14_num))
+new_15_49_per1000 <- read_csv("./aidsinfo_unaids/New HIV infections_HIV incidence per 1000 population - Adults (15-49)_Population_ All adults (15-49).csv")
+paged_table(head(new_15_49_per1000))
+new_50_per1000 <- read_csv("./aidsinfo_unaids/New HIV infections_HIV incidence per 1000 population - People aged 50 and over_Population_ All people aged 50 and over.csv")
+paged_table(head(new_50_per1000))
+death_14_num <- read_csv("./aidsinfo_unaids/AIDS-related deaths_AIDS-related deaths - Children (0-14).csv")
+paged_table(head(death_14_num))
+death_15_49_num <- read_csv("./aidsinfo_unaids/AIDS-related deaths_AIDS-related deaths - Adults (15-49)_Population_ All adults (15-49).csv")
+paged_table(head(death_15_49_num))
+death_50_num <- read_csv("./aidsinfo_unaids/AIDS-related deaths_AIDS-related deaths - People aged 50 and over_Population_ All people aged 50 and over.csv")
+paged_table(head(death_50_num))
+```
+
+<br>
+
+*The above datasets contain estimated average, upper and lower values for each country. For easier comparison I'm only using the estimated average levels here.*     
+Merge the data frames into a list and keep only the estimate averages:
+```{r}
+list_df <- list(PLHIV_50_num, PLHIV_15_49_num, PLHIV_14_num, new_15_49_per1000, new_50_per1000, death_14_num, death_15_49_num, death_50_num)
+
+extract_avg <- function(x) {
+  x[, c(1, seq(2, 129, 4))]
+}
+
+list_df <- lapply(list_df, extract_avg)
+names(list_df) <- c("PLHIV_50_num", "PLHIV_15_49_num", "PLHIV_14_num", "New_15_49_per1000", "New_50_per1000", "Death_14_num", "Death_15_49_num", "Death_50_num")
+
+names_hiv_dat3 <- names(list_df)
+```
+
+<br>
+
+Convert wide data into longer structures:  
+```{r}
+get_longer <- function(x, i) {
+  df <- pivot_longer(x, cols = 2:33, names_to = "Year", 
+                     names_transform = list(Year = as.integer),
+                     values_to = names_hiv_dat3[i])
+}
+
+for (i in 1:8) {
+  list_df[[i]] <- get_longer(list_df[[i]], i)
+}
+```
+
+<br>
+
+Chrunch the list into a data frame:
+```{r}
+hiv_dat3 <- list_df %>%
+  reduce(full_join, by = c("Country", "Year"))
+```
+
+<br>
+
+Remove prefix of estimated values in the format of "<n" just like in part 1.2:
+```{r}
+remove_prefix_2 <- function(x) {
+  x <- gsub("<", "", x)
+  x <- as.numeric(x)
+  x <- x/2
+}
+
+check_remove_prefix_2 <- function(x) {
+  x <- ifelse(grepl("<", x), remove_prefix_2(x), x)
+}
+
+hiv_dat3 <- sapply(hiv_dat3, check_remove_prefix_2)
+```
+
+<br>
+
+Now take a look at the dataset 1.3:
+```{r, layout = "l-body-outset"}
+hiv_dat3<-as.data.frame(hiv_dat3)
+paged_table(head(hiv_dat3))
+```
+
+<br>
+<br>
+<br>
+
+#### 1.4 Some more reference data for calculation and analysis   
+Source of data: Worldbank, UNESCO via Knoema Atlas, https://knoema.com/atlas  
+Content: GDP data, Age specific population data (under 14, 15 - 49 and above 50)    
+
+<br>
+
+Import & first glance:
+```{r, layout = "l-body-outset"}
+gdp_mil <- read_excel("./knoema atlas/API_NY.GDP.MKTP.CD_DS2_en_excel_v2_4701247.xls")
+paged_table(head(gdp_mil))
+pop_50_1000x <- read_excel("./knoema atlas/Total population aged 50 and over years - Ranks (1).xlsx")
+paged_table(head(pop_50_1000x))
+pop_25_49_1000x <- read_excel("./knoema atlas/Total population aged 25-49 years - Ranks.xlsx")
+paged_table(head(pop_25_49_1000x))
+pop_15_24_1000x <- read_excel("./knoema atlas/Total population aged 15-24 years - Ranks.xlsx")
+paged_table(head(pop_15_24_1000x))
+pop_14_1000x <- read_excel("./knoema atlas/Total population aged 0-14 years - Ranks (1).xlsx")
+paged_table(head(pop_14_1000x))
+```
+
+<br>
+
+Some rough cleaning to the GDP data, take out spare rows and columns, convert to long format:
+```{r}
+names(gdp_mil) <- as.character(gdp_mil[3, ])
+gdp_mil <- gdp_mil[-(1:3), ]
+gdp_mil <- gdp_mil %>%
+  dplyr::select(-`Indicator Name`, -`Indicator Code`)
+
+gdp_mil <- gdp_mil %>%
+  pivot_longer(cols = 3:64, names_to = "Year", names_transform = list(Year = as.integer), values_to = "GDP Mil")
+```
+
+<br>
+
+Merge the data frames on population data into a list, convert all data frames into long format too:  
+```{r}
+list_ref_dat <- list(`GDP mil` = gdp_mil, `Population under 14` = pop_14_1000x, 
+                     `Population 15-24` = pop_15_24_1000x,
+                     `Population 25-49` = pop_25_49_1000x, 
+                     `Population above 50` = pop_50_1000x)
+
+get_longer_ref <- function(x, i) {
+  df <- x[, -1] %>%
+    pivot_longer(cols = 2:16, names_to = "Year", names_transform = list(Year = as.integer), 
+                 values_to = names(list_ref_dat)[i])
+}
+
+for (i in 2:5) {
+  list_ref_dat[[i]] <- get_longer_ref(list_ref_dat[[i]], i)
+}
+```
+
+<br>
+
+Merge the data frames into one. The values on population were in the unit of 1000 in source data. Here I change them back with the unit of 1 to avoid future confusion:  
+```{r}
+hiv_ref_dat <- list_ref_dat %>%
+  reduce(full_join, by = c(`Country Name` = "Location", "Year")) %>%
+  mutate(Country = `Country Name`, `Population under 14` = `Population under 14` * 1000, 
+         `Population 15-49` = `Population 25-49` *1000 + `Population 15-24` * 1000, 
+         `Population above 50` = `Population above 50` * 1000) %>%
+  filter(Country %in% countries, Year %in% 1990:2022) %>%
+  dplyr::select(-`Country Name`)
+
+hiv_ref_dat <- hiv_ref_dat[, c(1, 8, 2, 3, 4, 9, 7)]
+```
+
+<br>
+
+Now take a look at the processed reference data:
+```{r, layout = "l-body-outset"}
+paged_table(head(hiv_ref_dat))
+```
+
+<br>
+<br>
+<br>
+
+### 2. Processing the entire data collection altogether   
+
+<br>
+
+*To this point, I now have 4 roughly processed data frames in my hands: 'hiv_dat1', 'hiv_dat2', 'hiv_dat3' and 'hiv_ref_dat'. I will now merge them altogether and process further from there.*  
+<br>
+
+#### 2.1 Merging all data frames
+
+<br>
+
+Import country code to hiv_dat3 to keep the formats consistant among data frames:
+```{r}
+country_code <- read_excel("./Countries_Worldbank.xlsx")
+country_code <- country_code[, c(4, 1:3)]
+hiv_dat3 <- as.data.frame(hiv_dat3)
+hiv_dat3 <- left_join(hiv_dat3, country_code, by = c(Country = "TableName"))
+hiv_dat3 <- hiv_dat3[, c(11, 1:10, 12:13)]
+```
+
+<br>
+
+Merge all data frames and re-arrange variables:  
+```{r, results = F}
+hiv_dat3$Year <- as.integer(hiv_dat3$Year)
+
+list_hiv_dat <- list(hiv_dat1, hiv_dat2, hiv_dat3, hiv_ref_dat)
+hiv_dat <- list_hiv_dat %>%
+  reduce(full_join, by = c("Country Code", "Country", "Year"))
+
+names(hiv_dat)
+hiv_dat <- hiv_dat[, c(1:3, 17, 25:27, 16, 22, 21, 20, 19, 11, 23, 24, 18, 12, 13, 15, 14, 
+                       6, 29:30, 28, 5, 7:9, 31:33)]
+```
+
+<br>
+
+How it looks like now:
+```{r, layout = "l-body-outset"}
+paged_table(head(hiv_dat))
+```
+
+<br>
+<br>
+<br>
+
+#### 2.2 Process the unified dataset
+
+<br>
+
+Unifying value classes:
+```{r, results = F}
+sapply(hiv_dat, class)
+hiv_dat[, -c(1:2, 22, 24)] <- apply(hiv_dat[, -c(1:2, 22, 24)], 2, function(x) {
+  as.numeric(as.character(x))
+})
+```
+
+<br>
+
+Because the age-specific data on new, death and prevalence is more complete (yearly) than the whole population data on new, death and prevalence (every 5 years), I'm filling the blanks in the whole population data with the sum of age specific data:  
+```{r}
+hiv_dat <- hiv_dat %>%
+  mutate(PLHIV_num = PLHIV_14_num + PLHIV_15_49_num + PLHIV_50_num, 
+         Death_num = Death_14_num + Death_15_49_num + Death_50_num, 
+         New_per_1000 = (`New 0-14 per 1000` + New_15_49_per1000 + New_50_per1000)/3)
+```
+
+<br>
+
+Add AIDS-related death rate values: death rate = number of AIDS related death in every million population.   
+*Normally the AIDS-related death rate is calculated by [DeathNumber/NewNumber], but due to the existance of estimated low figures (<n converted to n/2 in previous work) in the data of New, Death and PLHIV numbers, Calculating death rate this way could lead to misleadingly high ratios.*   
+```{r}
+hiv_dat <- hiv_dat %>%
+  mutate(`Death under 14` = Death_14_num/`Population under 14` * 1e+06, 
+         `Death 15-49` = Death_15_49_num/`Population 15-49` * 1e+06, 
+         `Death above 50` = Death_50_num/`Population above 50` * 1e+06, 
+         Death = ifelse(is.na(Death), Death_num/Population * 1e+06, Death))
+```
+
+<br>
+
+Unify prevalence data: prevalence = number of PLHIV per million population:
+```{r}
+hiv_dat <- hiv_dat %>%
+  mutate(`Prevalence under 14` = PLHIV_14_num/`Population under 14` * 1e+06, 
+         `Prevalence 15-49` = PLHIV_15_49_num/`Population 15-49` * 1e+06, 
+         `Prevalence above 50` = PLHIV_50_num/`Population above 50` * 1e+06, 
+         Prevalence = ifelse(is.na(Prevalence), PLHIV_num/Population * 1e+06, Prevalence))
+```
+
+<br>
+
+Unify new infection data: New = number of New infection per million population:
+```{r}
+hiv_dat <- hiv_dat %>%
+  mutate(New = ifelse(is.na(`New Infection Per 1000`), 
+                      New_per_1000 * 1000, `New Infection Per 1000` * 1000), 
+         `New under 14` = `New 0-14 per 1000` * 1000, 
+         `New 15-49` = New_15_49_per1000 * 1000,
+         `New above 50` = New_50_per1000 * 1000)
+```
+
+<br>
+
+Unify ART coverage data: ART% = precentage of PLHIV under ART:
+```{r}
+hiv_dat <- hiv_dat %>%
+  mutate(`ART%` = `ART Coverage`, 
+         `ART% under 14` = `PLHIV 0-14 on ART %`, 
+         `ART% lifelong pregnant` = `Pregnant PLHIV on ART Lifelong %`)
+```
+
+<br>
+
+Unify the pregnancy-related data:
+```{r}
+hiv_dat <- hiv_dat %>%
+  mutate(`Prevalence Pregnant` = `Pregnent HIV+ %` * 10000, 
+         `Mother-Child Transmission %` = `Mother-Child Transmittion per 100`)
+```
+
+<br>
+
+Modify spending data: spending = spending (current USD) per million population:
+```{r}
+hiv_dat <- hiv_dat %>%
+  mutate(`Spending Education` = `Spending Education %GDP` * `GDP Mil`/Population, 
+         `Spending Health` = `Spending Health %GDP` * `GDP Mil`/Population, 
+         `Spending Social Protection` = 
+           `Spending Social Protection %GDP` * `GDP Mil`/Population)
+```
+
+<br>
+
+Modify GDP data: GDP per person in current USD:
+```{r}
+hiv_dat <- hiv_dat %>%
+  mutate(`GDP per capita` = `GDP Mil` * 1e+06/Population)
+```
+
+<br>
+
+Re-organize all varibles and unify digits:
+```{r, results = F}
+names(hiv_dat)
+hiv_dat <- hiv_dat[, c(1, 2, 22, 24, 3, 8, 38:40, 4, 35:37, 41:53)]
+
+set_2_digits <- function(x) {
+  x <- round(x, digits = 2)
+}
+
+hiv_dat[, -c(1:5)] <- lapply(hiv_dat[, -c(1:5)], set_2_digits)
+```
+
+<br>
+
+Now take a look of the integrated data after processing:
+```{r, layout = "l-body-outset"}
+paged_table(head(hiv_dat))
+str(hiv_dat)
+```
+
+<br>
+<br>
+<br>
+
+#### 2.3 Countries with Missing Data
+
+<br>
+
+*As mentioned in the beginning of the project, the source data has many many NAs being such large collective datasets. Some countries might have submitted no data at all. Since the analysis of such data involving listing and ranking countries, it would make sence to make a note of countries who has submitted no data at all on each topic of analysis.*  
+
+*In future work of this project, I will try to find data on these missing countries seperately to give a fuller picture and increase the robustness of my analysis. The updated work will be pushed here when it's done.*  
+
+<br>
+
+Make a vector of countries with absolutely no data on the topic of HIV prevalence, new cases and death rate:  
+```{r}
+countries_hiv_dat <- unique(hiv_dat $ Country)[-234]
+
+missing_countries <- data.frame(Country = countries_hiv_dat, 
+                                New = rep(NA, length(countries_hiv_dat)),
+                                Death = rep(NA, length(countries_hiv_dat)),
+                                Prevalence = rep(NA, length(countries_hiv_dat)),
+                                ART = rep(NA, length(countries_hiv_dat)))
+
+for (i in 1:nrow(missing_countries)) {
+  country <- countries_hiv_dat[i]
+  new <- hiv_dat %>% filter(Country == country) %>% dplyr::select(New)
+  missing_new <- all(is.na(new))
+  missing_countries$New[i] <- missing_new
+  death <- hiv_dat %>% filter(Country == country) %>% dplyr::select(Death)
+  missing_death <- all(is.na(death))
+  missing_countries$Death[i] <- missing_death
+  prevalence <- hiv_dat %>% filter(Country == country) %>% dplyr::select(Prevalence)
+  missing_prevalence <- all(is.na(prevalence))
+  missing_countries$Prevalence[i] <- missing_prevalence
+  art <- hiv_dat %>% filter(Country == country) %>% dplyr::select(`ART%`)
+  missing_art <- all(is.na(art))
+  missing_countries$ART[i] <- missing_art
+}
+
+missing_countries_new <- missing_countries %>% 
+  filter(New == "TRUE") %>% dplyr::select(Country)
+missing_countries_new <- missing_countries_new$Country
+
+missing_countries_death <- missing_countries %>% 
+  filter(Death == "TRUE") %>% dplyr::select(Country)
+missing_countries_death <- missing_countries_death$Country
+
+missing_countries_prevalence <- missing_countries %>% 
+  filter(Prevalence == "TRUE") %>% dplyr::select(Country)
+missing_countries_prevalence <- missing_countries_prevalence$Country
+
+missing_countries_art <- missing_countries %>% 
+  filter(ART == "TRUE") %>% dplyr::select(Country)
+missing_countries_art <- missing_countries_art$Country
+```
+
+<br>
+
+Make the vectors ready to be used as captions for graphs:
+```{r}
+missing_countries_new <- paste(missing_countries_new, collapse = ", ")
+caption_missing_new <- str_wrap(paste("Data on the following countries are missing and therefore excluded from the analysis: ", missing_countries_new, sep = ""))
+
+missing_countries_death <- paste(missing_countries_death, collapse = ", ")
+caption_missing_death <- str_wrap(paste("Data on the following countries are missing and therefore excluded from the analysis: ", missing_countries_death, sep = ""))
+
+missing_countries_prevalence <- paste(missing_countries_prevalence, collapse = ", ")
+caption_missing_prevalence <- str_wrap(paste("Data on the following countries are missing and therefore excluded from the analysis: ", missing_countries_prevalence, sep = ""))
+
+missing_countries_art <- paste(missing_countries_art, collapse = ", ")
+caption_missing_art <- str_wrap(paste("Data on the following countries are missing and therefore excluded from the analysis: ", missing_countries_art, sep = ""))
+```
+
+<br>
+<br>
+<br>
+
+### 3. Descriptive Analysis
+
+<br>
+
+#### 3.1 Jitterplot of HIV Prevalence, New cases and Death rates every 5 years 
+
+<br>
+
+Set color-blind friendly custom colors:
+```{r}
+custom_colors <- c("#999999", "#E69F00", "#56B4E9", "#009900", "#F0E442", "#000077", "#990000", "#FF00FF")
+```
+
+<br>
+
+Create Jitterplot for Global HIV Prevalence:
+```{r}
+jitter_prevalence <- hiv_dat %>%
+  filter(!is.na(Region) & Year %in% c(1990, 1995, 2000, 2005, 2010, 2015, 2019)) %>%
+  ggplot(aes(Year, Prevalence, group = Region, colour = Region)) +
+  geom_jitter(width = 0.5, alpha = 0.7, na.rm = T) +
+  ggtitle("HIV Prevalence, All Countries") +
+  xlab("Year") + ylab("HIV Prevalence per Million Population, All Countries") +
+  scale_y_continuous(trans = "log10") +
+  scale_x_continuous(breaks = c(1990, 1995, 2000, 2005, 2010, 2015, 2020)) +
+  scale_colour_manual(values = custom_colors)+
+  labs(caption = caption_missing_prevalence)+
+  theme(plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1))
+```
+
+<br>
+
+Similarly, create Jitterplot for Global HIV New Infection Rate and AIDS-related Death Rate:
+```{r}
+jitter_new <- hiv_dat %>%
+  filter(!is.na(Region) & Year %in% c(1990, 1995, 2000, 2005, 2010, 2015, 2019)) %>%
+  ggplot(aes(Year, New, group = Region, colour = Region)) +
+  geom_jitter(width = 0.6, alpha = 0.7, na.rm = T) + 
+  ggtitle("HIV New Infection, All Countries") + 
+  xlab("Year") + 
+  ylab("HIV New Infection per Million Population, All Countries") +
+  scale_y_continuous(trans = "log10") + 
+  scale_x_continuous(limits = c(1990, 2020), 
+                     breaks = c(1990, 1995, 2000, 2005, 2010, 2015, 2020)) +
+  scale_colour_manual(values = custom_colors)+
+  labs(caption = caption_missing_new)+
+  theme(plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1))
+
+
+top_death <- hiv_dat %>%
+  filter(!is.na(Region) & Year %in% c(1990, 1995, 2000, 2005, 2010, 2015, 2019)) %>%
+  subset(Death > 5000, select = c(Year, Death, Country, Region))
+
+jitter_death <- hiv_dat %>%
+  filter(!is.na(Region) & Year %in% c(1990, 1995, 2000, 2005, 2010, 2015, 2019)) %>%
+  ggplot(aes(Year, Death, group = Region, colour = Region, label = Country)) +
+  geom_jitter(width = 1, alpha = 0.6, na.rm = T) + 
+  ggtitle("AIDS-Related Death, All Countries") + 
+  xlab("Year") + 
+  ylab("AIDS-Related Death per Million Population, All Countries") +
+  scale_colour_manual(values = custom_colors) + 
+  scale_y_continuous(trans = "log10") +
+  scale_x_continuous(limits = c(1990, 2020), 
+                     breaks = c(1990, 1995, 2000, 2005, 2010, 2015, 2019)) +
+  labs(caption = caption_missing_death)+
+  theme(plot.background = element_rect(colour = "black", fill=NA, linewidth=1))
+```
+
+<br>
+
+Here are the created jitterplots:
+
+<br>
+
+```{r, echo = F, results = T}
+jitter_prevalence
+```
+*One can tell from the jitter graph that from 1990 to 2015 (as 2019 data appeared greatly incomplete and cannot be used to draw conclusions), the HIV prevalence ratio has generally increased globally, but the inter-regional distributions remain consistant throughout the time. Sub-Saharan African countries remained the region with the highest prevalence, followed by West African and Latine American & Caribbean regions. South Asian countries remained in the lower end of prevalence.*    
+
+<br>
+<br>
+
+```{r, echo = F, results = T}
+jitter_new
+```
+*One can tell from the jitter graph that the global status of HIV new infection rate remained molerately for the past 30 years, despite moderate decrease on the countries with highest figures. Sub-Saharan African countries remained the region with the highest new infections, followed by West African and Latine American & Caribbean regions. European and Central Asian countries remained in the lower end of new infection.*
+
+<br>
+<br>
+
+```{r, echo = F, results = T}
+jitter_death
+```
+*Much like the previous graph, the AIDS-related death rate globally has improved little in the past 30 years, despite moderate decrease on the countries with highest figures. Sub-Saharan African countries remained the region with the highest AIDS-related death rate, followed by West African and Latine American & Caribbean regions. West Asian, East Asian and Pacific regions remained in the lower end of AIDS-related death rate.*
+
+<br>
+<br>
+<br>
+
+
+#### 3.2 Bar graph on Top countries of highest HIV prevalence, Death and New Infection rate, with and without being age specific.   
+
+##### 3.2.1 Top 5 countries of highest HIV Prevalence.  
+
+<br>
+
+Extract data on of top 5 countries of prevalence:
+```{r}
+prevalence_by_age <- hiv_dat %>%
+  dplyr::select(Country, Year, Prevalence, `Prevalence under 14`, 
+                `Prevalence 15-49`, `Prevalence above 50`) %>%
+  filter(Year %in% c(1990, 2000, 2005, 2010, 2015, 2019) &
+           !is.na(`Prevalence under 14`) & 
+           !is.na(`Prevalence 15-49`) &
+           !is.na(`Prevalence above 50`)) %>%
+  group_by(Year) %>%
+  slice_max(Prevalence, n = 5) %>%
+  mutate(`Prevalence all age` = Prevalence, Year = as.factor(Year)) %>%
+  dplyr::select(-Prevalence) %>%
+  pivot_longer(cols = 3:5, names_to = "Age Group", values_to = "Prevalence") %>%
+  arrange(Year, desc(`Prevalence all age`))
+  
+```
+
+<br>
+
+Plot the graphs for prevalence:
+```{r}
+prevalence_age_bar <- prevalence_by_age %>%
+  ggplot(aes(x = reorder_within(Country, -`Prevalence all age`, Year), 
+             y = Prevalence, fill = `Age Group`)) +
+  geom_bar(position = "stack", stat = "identity") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) +
+  scale_fill_brewer(palette = "Accent", labels = c("15 - 49", "Above 50", "Under 14")) +
+  ylab("HIV Prevalence per Million Population") +
+  xlab("Top 5 Countries / Year") + 
+  facet_grid(~Year, scales = "free") + 
+  ggtitle("Top 5 Countries HIV Prevalence") +
+  scale_x_discrete(labels = function(x) gsub("__.+$", "", x))+
+  labs(caption = caption_missing_prevalence)
+
+prevalence_bar <- prevalence_by_age %>%
+  ggplot(aes(x = reorder_within(Country, -`Prevalence all age`, Year), 
+             `Prevalence all age`, fill = Country)) +
+  geom_bar(stat = "identity", show.legend = F) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) +
+  scale_fill_brewer(palette = "Paired") + 
+  ylab("HIV Prevalence per Million Population") + 
+  xlab("Top 5 Countries / Year") +
+  facet_grid(~Year, scales = "free") + 
+  ggtitle("Top 5 Countries HIV Prevalence") + 
+  scale_x_discrete(labels = function(x) gsub("__.+$", "", x))+
+  labs(caption = caption_missing_prevalence)
+  
+```
+
+<br>
+
+Here are the created bar plots:
+
+<br>
+
+```{r, echo = F, results = T}
+prevalence_bar
+prevalence_age_bar
+```
+
+*Top 5 countries of HIV prevalence throughout the past 30 years, with and without age seggregation. One can see that while the 15-49 age group remained dominant among people livin gwith HIV in these countries, the senior infected population above 50 years old contributed to most of the increase in the prevalence and is almost as high as the 15-49 age group by 2019. The list of top 5 countries didn't change much since 1995, except for Cabo Verde, which managed to move out of the list by 2010.*    
+
+<br>
+<br>
+
+##### 3.2.2 Top 5 countries of highest HIV New Infection Rate.  
+
+<br>
+
+Extract data on of top 5 countries of new infection:
+```{r}
+new_by_age <- hiv_dat %>%
+  dplyr::select(Country, Year, New, `New under 14`, `New 15-49`, `New above 50`) %>%
+  filter(Year %in% c(2000, 2005, 2010, 2015, 2019) &
+           !is.na(`New under 14`) & 
+           !is.na(`New 15-49`) &
+           !is.na(`New above 50`)) %>%
+  group_by(Year) %>%
+  slice_max(New, n = 5) %>%
+  mutate(`New all age` = New, Year = as.factor(Year)) %>%
+  dplyr::select(-New) %>%
+  pivot_longer(cols = 3:5, names_to = "Age Group", values_to = "New") %>%
+  arrange(Year, desc(`New all age`))
+```
+
+<br>
+
+Plot the graphs for New HIV Infections:
+```{r}
+new_age_bar <- new_by_age %>%
+  ggplot(aes(x = reorder_within(Country, -`New all age`, Year), 
+             y = New, fill = `Age Group`)) + 
+  geom_bar(position = "stack", stat = "identity") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) + 
+  scale_fill_brewer(palette = "Accent", labels = c("15 - 49", "Above 50", "Under 14")) +
+  ylab("HIV New Cases per Million Population") +
+  xlab("Top 5 Countries / Year") + 
+  facet_grid(~Year, scales = "free") + 
+  ggtitle("Top 5 Countries of HIV New Cases") +
+  scale_x_discrete(labels = function(x) gsub("__.+$", "", x))+
+  labs(caption = caption_missing_new)
+
+new_bar <- new_by_age %>%
+  ggplot(aes(x = reorder_within(Country, -`New all age`, Year), 
+             `New all age`, fill = Country)) +
+  geom_bar(stat = "identity", show.legend = F) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) +
+  scale_fill_brewer(palette = "Spectral") + 
+  ylab("HIV New Cases per Million Population") + 
+  xlab("Top 5 Countries / Year") +
+  facet_grid(~Year, scales = "free") + 
+  ggtitle("Top 5 Countries HIV New Cases") + 
+  scale_x_discrete(labels = function(x) gsub("__.+$", "", x))+
+  labs(caption = caption_missing_new)
+```
+
+<br>
+
+Here are the created bar plots:
+
+<br>
+
+```{r, echo = F, results = T}
+new_bar
+new_age_bar
+```
+
+*Top 5 countries of HIV new infection rate throughout the past 30 years, with and without age seggregation. One can tell from the graphs that the highest figures on new infection rates are decreasing, while the new infection rate for children (under 14) posed the most significant decrease compared to the other age groups. The listed countries each 5 years didn't change much, except for Zimbabwe, which was in the worst 5 till 2010, but managed to move out of the list by 2015.*  
+
+<br>
+
+##### 3.2.3 Top 5 countries of highest AIDS related Death Rate.  
+
+<br>
+
+Extract data on of top 5 countries of AIDS related death:
+```{r}
+death_by_age <- hiv_dat %>%
+  dplyr::select(Country, Year, Death, `Death under 14`, `Death 15-49`, `Death above 50`) %>%
+  filter(Year %in% c(1990, 2000, 2005, 2010, 2015, 2019) & 
+           !is.na(`Death under 14`) &
+           !is.na(`Death 15-49`) &
+           !is.na(`Death above 50`)) %>%
+  group_by(Year) %>%
+  slice_max(Death, n = 5) %>%
+  mutate(`Death all age` = Death, Year = as.factor(Year)) %>%
+  dplyr::select(-Death) %>%
+  pivot_longer(cols = 3:5, names_to = "Age Group", values_to = "Death") %>%
+  arrange(Year, desc(`Death all age`))
+```
+
+<br>
+
+Plot the graphs for AIDS related Death:
+```{r}
+death_age_bar <- death_by_age %>%
+  ggplot(aes(x = reorder_within(Country, -`Death all age`, Year), 
+             y = Death, fill = `Age Group`)) +
+  geom_bar(position = "stack", stat = "identity") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) +
+  scale_fill_brewer(palette = "Accent", labels = c("15 - 49", "Above 50", "Under 14")) +
+  ylab("AIDS Related Death per Million Population") +
+  xlab("Top 5 Countries / Year") + 
+  facet_grid(~Year, scales = "free") + 
+  ggtitle("Top 5 Countries of AIDS Related Death") +
+  scale_x_discrete(labels = function(x) gsub("__.+$", "", x))+
+  labs(caption = caption_missing_death)
+
+death_bar <- death_by_age %>%
+  ggplot(aes(x = reorder_within(Country, -`Death all age`, Year), 
+             `Death all age`, fill = Country)) +
+  geom_bar(stat = "identity", show.legend = F) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) +
+  scale_fill_brewer(palette = "Paired") + 
+  ylab("AIDS Related Death per Million Population") + 
+  xlab("Top 5 Countries / Year") +
+  facet_grid(~Year, scales = "free") + 
+  ggtitle("Top 5 Countries of AIDS Related Death") + 
+  scale_x_discrete(labels = function(x) gsub("__.+$", "", x))+
+  labs(caption = caption_missing_death)
+```
+
+<br>
+
+Here are the created bar plots:
+
+<br>
+
+```{r, echo = F, results = T}
+death_bar
+death_age_bar
+```
+
+*Top 5 countries of AIDS-related death rate throughout the past 30 years, with and without age seggregation. One can tell that the senior infected populationc(above 50 years old) remained the biggest contributer of deaths. The death rate of other age groups were the highest around 2005 and went down afterwards.*    
+
+<br>
+
+##### 3.2.4 Top 10 countries of Best ART Support.  
+
+<br>
+
+*Because data on 3 ART-related variables are highly incomplete and fragmented, comparing 3 variables altogether will cause further loss of data by eliminating entries with NAs in 1-2 out of the 3 varibles. Hence here I'm displaying the 3 vars seperately to perserve most of the information.*  
+
+<br>
+
+Extract data on ART coverage, top and buttom 10 countries each year, then combine the data:
+```{r}
+art_top <- hiv_dat %>%
+  dplyr::select(Country, Year, `ART%`) %>%
+  filter(!is.na(`ART%`)) %>%
+  dplyr::group_by(Year) %>%
+  slice_max(`ART%`, n = 10, with_ties = F) %>%
+  arrange(Year, -`ART%`) %>%
+  mutate(Rank = rep(1:10, 4))
+
+art_bottum <- hiv_dat %>%
+  dplyr::select(Country, Year, `ART%`) %>%
+  filter(!is.na(`ART%`)) %>%
+  dplyr::group_by(Year) %>%
+  slice_min(`ART%`, n = 10, with_ties = F) %>%
+  arrange(Year, -`ART%`) %>%
+  mutate(Rank = rep(1:10, 4))
+
+add_group <- function(char, dat) {
+  extra_row <- rep(char, nrow(dat))
+  dat <- dat %>%
+    mutate(Group = extra_row)
+  dat
+}
+
+art_top <- add_group("Top", art_top)
+art_bottum <- add_group("Bottum", art_bottum)
+art_cov <- bind_rows(art_top, art_bottum)
+```
+
+<br>
+
+The extracted dataset looks like this:
+```{r, echo = F, results = T}
+paged_table(art_cov)
+```
+
+<br>
+
+Do the same with 'ART% under 14' and 'ART% for pregnancy'.  
+*I noticed that most of the data of these 2 vars on high income countries are missing, which will obviously affect the 'top' group of categoties. hence I'll do the next best thing and do a summarization of only middle and low income countries.*  
+```{r}
+art_14_top <- hiv_dat %>%
+  dplyr::select(Country, IncomeGroup, Year, `ART% under 14`) %>%
+  filter(!is.na(`ART% under 14`) 
+         & Year %in% c(2000, 2005, 2010, 2015, 2019) &
+           !IncomeGroup == "High Income") %>%
+  group_by(Year) %>%
+  slice_max(`ART% under 14`, n = 10, with_ties = F) %>%
+  arrange(Year, -`ART% under 14`) %>%
+  mutate(Rank = rep(1:10, 5))
+
+art_14_bottum <- hiv_dat %>%
+  dplyr::select(Country, IncomeGroup, Year, `ART% under 14`) %>%
+  filter(!is.na(`ART% under 14`) & 
+           Year %in% c(2000, 2005, 2010, 2015, 2019) & 
+           !IncomeGroup == "High Income") %>%
+  group_by(Year) %>%
+  slice_min(`ART% under 14`, n = 10, with_ties = F) %>%
+  arrange(Year, -`ART% under 14`) %>%
+  mutate(Rank = rep(1:10, 5))
+
+art_14_top <- add_group("Top", art_14_top)
+art_14_bottum <- add_group("Bottum", art_14_bottum)
+art_cov_14 <- bind_rows(art_14_top, art_14_bottum)
+
+
+art_preg_top <- hiv_dat %>%
+  dplyr::select(Country, IncomeGroup, Year, `ART% lifelong pregnant`) %>%
+  filter(!is.na(`ART% lifelong pregnant`) & 
+           Year %in% c(2010, 2015, 2019) & 
+           !IncomeGroup == "High Income") %>%
+  group_by(Year) %>%
+  slice_max(`ART% lifelong pregnant`, n = 10, with_ties = F) %>%
+  arrange(Year, -`ART% lifelong pregnant`) %>%
+  mutate(Rank = rep(1:10, 3))
+
+art_preg_bottum <- hiv_dat %>%
+  dplyr::select(Country, IncomeGroup, Year, `ART% lifelong pregnant`) %>%
+  filter(!is.na(`ART% lifelong pregnant`) & 
+           Year %in% c(2010, 2015, 2019) & 
+           !IncomeGroup == "High Income") %>%
+  group_by(Year) %>%
+  slice_min(`ART% lifelong pregnant`, n = 10, with_ties = F) %>%
+  arrange(Year, -`ART% lifelong pregnant`) %>%
+  mutate(Rank = rep(1:10, 3))
+
+art_preg_top <- add_group("Top", art_preg_top)
+art_preg_bottum <- add_group("Bottum", art_preg_bottum)
+art_cov_preg <- bind_rows(art_preg_top, art_preg_bottum)
+```
+
+<br>
+
+Adjust the grouping information of the above datasets:
+```{r}
+art_cov <- art_cov %>%
+  mutate(`ART%` = ifelse(Group == "Top", `ART%`, -`ART%`))
+
+art_cov_14 <- art_cov_14 %>%
+  mutate(`ART% under 14` = ifelse(Group == "Top", `ART% under 14`, -`ART% under 14`))
+
+art_cov_preg <- art_cov_preg %>%
+  mutate(`ART% lifelong pregnant` = ifelse(Group == "Top", `ART% lifelong pregnant`, -`ART% lifelong pregnant`))
+```
+
+<br>
+
+Plot the graphs:
+```{r}
+art_cov_bar <- art_cov %>%
+  ggplot(aes(fill = Group)) +
+  geom_bar(data = ~subset(., Group = "Top"), aes(x = Rank, y = `ART%`), stat = "identity") +
+  geom_bar(data = ~subset(., Group = "Bottum"), aes(x = Rank, y = `ART%`), stat = "identity") +
+  facet_wrap(~Year) + 
+  scale_y_continuous(limits = c(-100, 100), breaks = seq(-20, 100, 20), 
+                     labels = abs(seq(-20, 100, 20))) + 
+  scale_fill_discrete(labels = c("Lowest Coverage", "Highest Coverage")) + 
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(), 
+        legend.title = element_blank(),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) + 
+  geom_hline(yintercept = 0, linetype = 5) +
+  geom_text(data = ~subset(., Group == "Top"), 
+            aes(label = Country, x = Rank, y = `ART%`), size = 2, hjust = -0.15) +
+  geom_text(data = ~subset(., Group == "Bottum"), 
+            aes(label = Country, x = Rank, y = `ART%`), size = 2, hjust = 1.15) +
+  xlab("Country") + ylab("ART Coverage (%) Among PLHIV") +
+  ggtitle(" Top 10 Countries with Highest and Lowest ART Coverage for PLHIV") + 
+  labs(caption = caption_missing_art)+
+  coord_flip()
+
+
+art_cov_14_bar <- art_cov_14 %>%
+  ggplot(aes(fill = Group)) + 
+  geom_bar(data = ~subset(., Group = "Top"),
+           aes(x = Rank, y = `ART% under 14`), stat = "identity") + 
+  geom_bar(data = ~subset(., Group = "Bottum"), 
+           aes(x = Rank, y = `ART% under 14`), stat = "identity") + 
+  facet_wrap(~Year, nrow = 3) + 
+  scale_y_continuous(limits = c(-100, 120), breaks = seq(-20, 100, 20), 
+                     labels = abs(seq(-20, 100, 20))) + 
+  scale_fill_discrete(labels = c("Lowest Coverage", "Highest Coverage")) +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(), 
+        legend.title = element_blank(),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) +
+  geom_hline(yintercept = 0, linetype = 5) + 
+  geom_text(data = ~subset(., Group == "Top"), 
+            aes(label = Country, x = Rank, y = `ART% under 14`), size = 2, hjust = -0.15) +
+  geom_text(data = ~subset(., Group == "Bottum"), 
+            aes(label = Country, x = Rank, y = `ART% under 14`), size = 2, hjust = 1.15) +
+  xlab("Country") +
+  ylab("ART Coverage (%) Among PLHIV under 14") + 
+  labs(title = "Top 10 Countries with Highest and Lowest ART Coverage \n for PLHIV under 14", 
+       subtitle = "Low & Middle Income Countries") + 
+  labs(caption = caption_missing_art)+
+  coord_flip()
+
+
+art_cov_preg_bar <- art_cov_preg %>%
+  ggplot(aes(fill = Group)) + 
+  geom_bar(data = ~subset(., Group = "Top"), 
+           aes(x = Rank, y = `ART% lifelong pregnant`), stat = "identity") + 
+  geom_bar(data = ~subset(., Group = "Bottum"), 
+           aes(x = Rank, y = `ART% lifelong pregnant`), stat = "identity") + 
+  facet_wrap(~Year, nrow = 2) + 
+  scale_y_continuous(limits = c(-100, 120), breaks = seq(-40, 100, 20), 
+                     labels = abs(seq(-40, 100, 20))) + 
+  scale_fill_discrete(labels = c("Lowest Coverage", "Highest Coverage")) +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(), 
+        legend.title = element_blank(),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) +
+  geom_hline(yintercept = 0, linetype = 5) +
+  geom_text(data = ~subset(., Group == "Top"), 
+            aes(label = Country, x = Rank, y = `ART% lifelong pregnant`), 
+            size = 2, hjust = -0.15) + 
+  geom_text(data = ~subset(., Group == "Bottum"), 
+            aes(label = Country, x = Rank, y = `ART% lifelong pregnant`), 
+            size = 2, hjust = 1.15) +
+  xlab("Country") + ylab("Precentage (%) of HIV+ Pregnant women receiving lifelong ART") +
+  labs(title = "Top 10 Countries with Highest and Lowest ART Coverage \n among HIV+ Pregnant Women", 
+       subtitle = "Low & Middle Income Countries",
+       caption = caption_missing_art) + 
+  coord_flip()
+```
+
+<br>
+
+Here are the created bar plots:
+
+<br>
+
+```{r, echo = F, results = T}
+art_cov_bar
+art_cov_14_bar
+art_cov_preg_bar
+```
+
+*From the above 3 graphs, one can tell that some countries (including many mid-low income countries) are doing quite well on supporting people living with HIV with antiviral treatments. They were able to reach an ART coverage rate above 80% among whole populations, children (under 14) and pregnant women. Countries on the lower end also made some progress from 0% to almost 20% (for whole population and children) and roughly 30% for pregnant women. However there is still a lot to do for all countries to reach the 95% goal.*  
+
+<br>
+<br>
+<br>
+
+#### 3.3 Animated Geo heatmap obtain with change of HIV-related indecies over time  
+
+<br>
+
+Obtain world map data:
+```{r}
+world_map_data <- map_data("world")
+identical(unique(hiv_dat$Country), unique(world_map_data$region))
+```
+
+<br>
+
+*Because different lists of country names occasionally have different terms for certain countries, I'm using country code instead of country for merging data.*  
+Add country codes to the world map data:  
+```{r}
+country_code <- read_excel("./country code.xlsx")
+country_code <- country_code %>%
+  dplyr::select(Country, `Alpha-3 code`)
+world_map_data <- left_join(world_map_data, country_code, by = c(region = "Country"))
+```
+
+<br>
+
+*The country names in world map data also conflits somewhere with the formats of country names in the country code list, for this step I will modify the original file of country code manually, and then re-import the file and merge. This is a bit hedious but by doing this once, I get a country code list matching the ggplot inbeded map, which is useful:*
+```{r, echo = T, results = F}
+unique(world_map_data$region[which(is.na(world_map_data$`Alpha-3 code`))])
+
+# manually change the source file here, then re-import it.
+
+country_code <- read_excel("./country code.xlsx")
+world_map_data <- world_map_data %>%
+  dplyr::select(-`Alpha-3 code`)
+world_map_data <- left_join(world_map_data, country_code, by = c(region = "Country"))
+world_map_data <- world_map_data %>%
+  dplyr::select(long, lat, group, region, `Alpha-3 code`)
+```
+
+<br>
+
+The world map data now looks like this:
+```{r, echo = F, results = T}
+paged_table(head(world_map_data))
+```
+
+<br>
+
+Export and save the file for world map data with country code:
+```{r}
+write_xlsx(world_map_data, "/Users/katxiaoyu/Documents/R_Training/data analysis notes/useful datasets/ggplot world map data with country code.xlsx")
+```
+
+<br>
+
+Merge world map data with the dataset of interest:
+```{r}
+hiv_map_dat <- left_join(world_map_data, hiv_dat, by = c(`Alpha-3 code` = "Country Code")) %>%
+  dplyr::select(Country, long, lat, group, Year, Prevalence, Death, New, `ART%`, `Mother-Child Transmission %`) %>%
+  mutate(Year = as.integer(Year))
+```
+
+<br>
+
+To avoid the animating flashing with NAs in between years, I'm letting some NAs be replaced by the previous year's data, if avialable:
+```{r}
+hiv_map_dat <- hiv_map_dat %>%
+  group_by(Country) %>%
+  fill(New, .direction = "up") %>%
+  fill(Death, .direction = "up") %>%
+  fill(Prevalence, .direction = "up") %>%
+  fill(`ART%`, .direction = "up") %>%
+  ungroup()
+```
+
+<br>
+
+Generate the geo-heatmap animation, on HIV Prevalence:
+```{r, echo = T, results = F}
+prevalence_map_animate <- hiv_map_dat %>%
+  filter(Year %in% as.integer(1990:2019)) %>%
+  ggplot(aes(x = long, y = lat, group = group)) + 
+  geom_polygon(aes(fill = Prevalence), color = "black") +
+  scale_fill_gradient(trans = "log10", name = "HIV Prevalence \n per Million People", 
+                      low = "limegreen", high = "firebrick", na.value = "grey85") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(),
+        axis.ticks = element_blank(), axis.ticks.x = element_blank(), 
+        axis.ticks.y = element_blank(), rect = element_blank(),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) +
+  transition_time(Year) + 
+  labs(title = "HIV Prevalence 1990-2019", subtitle = "Year: {frame_time}",
+       caption = caption_missing_prevalence) +
+  ylab("") + 
+  xlab("")
+
+prevalence_map_animate <- gganimate::animate(prevalence_map_animate, 
+                                             height = 500, width = 1000, duration = 20,
+                                             end_pause = 10)
+```
+
+<br>
+
+Here is the generated animation on global HIV prevalence:
+```{r, echo = F, results = T}
+prevalence_map_animate
+```
+
+*By reading this animated geo heat map, one can easily spot the regions with missing data, as well as the change on HIV prevalence of each country from 1990 to 2019, which is, sadly, not that much change afterall. *  
+
+<br>
+<br>
+
+Generate the geo-heatmap animation, on AIDS-related Death:
+```{r, echo = T, results = F}
+death_map_animate <- hiv_map_dat %>%
+  filter(Year %in% as.integer(1990:2019)) %>%
+  ggplot(aes(x = long, y = lat, group = group)) + 
+  geom_polygon(aes(fill = Death), color = "black") +
+  scale_fill_gradient(trans = "log10", name = "AIDS Related Death \n per Million People", 
+                      low = "limegreen", high = "firebrick", na.value = "grey85") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), 
+        axis.ticks = element_blank(), axis.ticks.x = element_blank(), 
+        axis.ticks.y = element_blank(), rect = element_blank(),
+        plot.caption = element_text(size = 4, color = "grey50", hjust = 1),
+        plot.background = element_rect(colour = "black", fill=NA, linewidth=1)) +
+  transition_time(Year) + 
+  labs(title = "AIDS Related Death, 1990-2021", subtitle = "Year: {frame_time}",
+       caption = caption_missing_death) +
+  ylab("") + 
+  xlab("") 
+
+death_map_animate <- gganimate::animate(death_map_animate, height = 500, width = 1000, 
+                                        duration = 20, end_pause = 10)
+```
+
+<br>
+
+Here is the generated animation on global AIDS-related death rate:
+```{r, echo = F, results = T}
+death_map_animate
+```
+
+*By reading this animated geo heat map, one can easily spot the regions with missing data, as well as the change on AIDS-related death rate of each country from 1990 to 2019, which is, sadly, also not that much change afterall. *  
+
+<br>
+<br>
+<br>
+
+
+#### 3.3 Multiple regressions on country socioeconomical data such as spendings, gdp per capita and life expectance vs. HIV epidemic indecies.  
+
+<br>
+
+To be completed......
+
+
